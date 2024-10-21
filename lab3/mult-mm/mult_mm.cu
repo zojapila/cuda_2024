@@ -27,42 +27,49 @@ __global__ void standardMatrixMult(float *A, float *B, float *C, int numARows,
 //@@ INSERT CODE HERE
 // Compute C = A * B tiled matrix-matrix multiply
 __global__ void matrixMultiply(float *A, float *B, float *C, int numARows, 
-                               int numAColumns, int numBRows, int numBColumns) // w instrukcji do cwiczenia nazywa sie to matrixMult()
+                           int numAColumns, int numBRows, int numBColumns) 
 {
-    __device__ __shared__ float ds_A [TILE_WIDTH][TILE_WIDTH]; 
-    __device__ __shared__ float ds_B [TILE_WIDTH][TILE_WIDTH]; 
+    __shared__ float ds_A [TILE_WIDTH][TILE_WIDTH]; 
+    __shared__ float ds_B [TILE_WIDTH][TILE_WIDTH]; 
     int row = TILE_WIDTH * blockIdx.y + threadIdx.y;
     int col = TILE_WIDTH * blockIdx.x + threadIdx.x;
     float scalar = 0;
 
-    for (int ph=0; ph < ceil((float)numAColumns/TILE_WIDTH); ph++) 
+    for (int ph = 0; ph < ceil((float)numAColumns/TILE_WIDTH); ph++) 
     {
-        if (row * numAColumns < numARows && ph * TILE_WIDTH + threadIdx.x < numAColumns) 
+        if (row < numARows && ph * TILE_WIDTH + threadIdx.x < numAColumns) 
         {
-            ds_A[row][ph * TILE_WIDTH + threadIdx.x] = A[row * numAColumns + ph * TILE_WIDTH + threadIdx.x];
+            ds_A[threadIdx.y][threadIdx.x] = A[row * numAColumns + ph * TILE_WIDTH + threadIdx.x];
         }
         else 
         {
-            ds_A[row][ph * TILE_WIDTH + threadIdx.x] = 0;
+            ds_A[threadIdx.y][threadIdx.x] = 0;
         }
-        if (row * numBColumns < numBRows && col < numBColumns) 
+        
+        if (col < numBColumns && ph * TILE_WIDTH + threadIdx.y < numBRows) 
         {
-            ds_B[row*numBColumns][col] = B[row * numBColumns + ph * TILE_WIDTH + threadIdx.x];
+            ds_B[threadIdx.y][threadIdx.x] = B[(ph * TILE_WIDTH + threadIdx.y) * numBColumns + col];
         }
         else 
         {
-            ds_B[row*numBColumns][col] = 0;
+            ds_B[threadIdx.y][threadIdx.x] = 0;
         }
+        
         __syncthreads();
+        
         for (int i = 0; i < TILE_WIDTH; i++) 
         {
-            scalar += ds_A[row][i] * ds_B[i][col];
+            scalar += ds_A[threadIdx.y][i] * ds_B[i][threadIdx.x];
         }
+        __syncthreads();
     }
 
-        
+    if (row < numARows && col < numBColumns) 
+    {
+        C[row * numBColumns + col] = scalar;
+    }
 }
-//
+
 
 void generateRandomFlattenMatrix(float *M, unsigned int size)
 {
@@ -165,25 +172,48 @@ int main(int argc, char **argv)
     ///////////////////////////////////////////////////////
     //@@ INSERT CODE HERE
 
-    // // save output values
-    // if (same)
-    // {
-    //     FILE *fp = fopen("mult_mm_out.txt", "w");
-    //     if (fp == NULL)
-    //     {
-    //         fprintf(stderr, "Cannot open output file!\n");
-    //     }
-    //     else
-    //     {
-    //         printf("Generating output file... ");
-    //         for (int i = 0; i < heightA * widthB; ++i)
-    //         {
-    //             fprintf(fp, "%.0f ", h_C[i]);
-    //         }
-    //         printf("DONE! \n");
-    //         fclose(fp);
-    //     }
-    // }
+	float *deviceA;
+    float *deviceB;
+    float *deviceC;
+    
+    cudaMalloc(&deviceA, matAsize * sizeof(float));
+	cudaMalloc(&deviceB, matBsize * sizeof(float));
+	cudaMalloc(&deviceC, heightA * widthB * sizeof(float));
+
+	cudaMemcpy(deviceA, h_A, matAsize * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceB, h_B, matBsize * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    dim3 dimBlock(TILE_WIDTH,TILE_WIDTH,1);
+    dim3 dimGrid(ceil((float)heightA/ TILE_WIDTH), ceil((float)widthB/ TILE_WIDTH));
+
+    
+    // standardMatrixMult<<<dimGrid, dimBlock>>>( deviceA, deviceB, deviceC, heightA , widthA, widthA, widthB);
+    matrixMultiply<<<dimGrid, dimBlock>>>(deviceA, deviceB,  deviceC, heightA , widthA ,widthA, widthB);
+
+    float *h_C = (float *)malloc(heightA * widthB * sizeof(float));
+    cudaMemcpy(h_C,deviceC , heightA * widthB * sizeof(float), cudaMemcpyDeviceToHost);
+
+
+    // save output values
+    if (true)
+    {
+        FILE *fp = fopen("mult_mm_out.txt", "w");
+        if (fp == NULL)
+        {
+            fprintf(stderr, "Cannot open output file!\n");
+        }
+        else
+        {
+            printf("Generating output file... ");
+            for (int i = 0; i < heightA * widthB; ++i)
+            {
+                fprintf(fp, "%.0f ", h_C[i]);
+            }
+            printf("DONE! \n");
+            fclose(fp);
+        }
+    }
 
     ///////////////////////////////////////////////////////
 
