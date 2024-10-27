@@ -185,7 +185,7 @@ int main(int argc, char **argv)
 
 
     dim3 dimBlock(TILE_WIDTH,TILE_WIDTH,1);
-    dim3 dimGrid(ceil((float)heightA/ TILE_WIDTH), ceil((float)widthB/ TILE_WIDTH));
+    dim3 dimGrid(ceil((float)widthB/ TILE_WIDTH), ceil((float)heightA/ TILE_WIDTH));
 
     
     // standardMatrixMult<<<dimGrid, dimBlock>>>( deviceA, deviceB, deviceC, heightA , widthA, widthA, widthB);
