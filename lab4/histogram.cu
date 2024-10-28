@@ -49,10 +49,34 @@ __global__ void histogram_2(unsigned char *buffer, long size, unsigned int *hist
 
 }
 
+
 //@@ INSERT CODE HERE
 // Histogram - interleaved partitioning + privatisation
 __global__ void histogram_3(unsigned char *buffer, long size, unsigned int *histogram, unsigned int nBins)
 {
+    extern __shared__ unsigned int ds_histogram[]; // Dynamiczna pamięć współdzielona na prywatny histogram dla każdego bloku
+
+    int binWidth = ceil(26.0 / nBins);
+    int threadsNum = gridDim.x * blockDim.x;
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+    for (int i = threadIdx.x; i < nBins; i += blockDim.x) {
+        ds_histogram[i] = 0;
+    }
+    __syncthreads();
+
+    for (long pos = idx; pos < size; pos += threadsNum) {
+        int alphabetPosition = buffer[pos] - 'a';
+        if (alphabetPosition >= 0 && alphabetPosition < 26) {
+            atomicAdd(&ds_histogram[alphabetPosition / binWidth], 1);
+        }
+    }
+
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < nBins; i += blockDim.x) {
+        atomicAdd(&histogram[i], ds_histogram[i]);
+    }
 }
 
 //@@ EXTRA: INSERT CODE HERE
@@ -127,6 +151,40 @@ int main(int argc, char **argv)
 	// cudaFree(d_histogram);
 	////////////////////////////////////////////////////////////////
 	// HISTOGRAM 2
+	// dim3 dimBlock2 (256,1,1);
+	// dim3 dimGrid2 ((size + 256 - 1 ) / (256),1,1);
+	// unsigned char *d_buffer2;
+	// unsigned int *d_histogram2, *h_histogram2;
+
+	// h_histogram2 = (unsigned int *)malloc(nBins * sizeof(unsigned int));
+	// memset(h_histogram2, 0, nBins * sizeof(unsigned int));  // Użycie memset zamiast cudaMemset
+
+	// cudaMalloc((void **)&d_buffer2, size * sizeof(unsigned char));
+	// cudaMalloc((void **)&d_histogram2, nBins * sizeof(unsigned int));
+	// cudaMemcpy(d_buffer2, h_buffer, size * sizeof(unsigned char), cudaMemcpyHostToDevice);
+	// cudaMemset(d_histogram2, 0, nBins * sizeof(unsigned int)); // Zerowanie histogramu na urządzeniu
+
+	// histogram_2<<<dimGrid2,dimBlock2>>>(d_buffer2, size, d_histogram2, nBins);
+	// cudaError_t err = cudaGetLastError();
+    // if (err != cudaSuccess) std::cout << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+	// cudaDeviceSynchronize();
+
+	// cudaMemcpy(h_histogram2, d_histogram2, nBins * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+
+	// printf("Histogram:\n");
+	// for (int i = 0; i < nBins; i++)
+	// {
+	// 	printf("Bin %d: %u\n", i, h_histogram2[i]);
+	// }
+	// char* filename = (char *)"histogram_out.txt";
+	// writeFile(filename, h_histogram2, nBins, 26);
+	// // Zwolnienie pamięci
+	// free(h_buffer);
+	// free(h_histogram2);
+	// cudaFree(d_buffer2);
+	// cudaFree(d_histogram2);
+	//////////////////////////////////////////////////////
+	// histogram 3
 	dim3 dimBlock2 (256,1,1);
 	dim3 dimGrid2 ((size + 256 - 1 ) / (256),1,1);
 	unsigned char *d_buffer2;
@@ -140,7 +198,7 @@ int main(int argc, char **argv)
 	cudaMemcpy(d_buffer2, h_buffer, size * sizeof(unsigned char), cudaMemcpyHostToDevice);
 	cudaMemset(d_histogram2, 0, nBins * sizeof(unsigned int)); // Zerowanie histogramu na urządzeniu
 
-	histogram_1<<<dimGrid2,dimBlock2>>>(d_buffer2, size, d_histogram2, nBins);
+	histogram_3<<<dimGrid2,dimBlock2>>>(d_buffer2, size, d_histogram2, nBins);
 	cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) std::cout << "CUDA error: " << cudaGetErrorString(err) << std::endl;
 	cudaDeviceSynchronize();
@@ -159,6 +217,7 @@ int main(int argc, char **argv)
 	free(h_histogram2);
 	cudaFree(d_buffer2);
 	cudaFree(d_histogram2);
+	
 	///////////////////////////////////////////////////////
 
 	return 0;
