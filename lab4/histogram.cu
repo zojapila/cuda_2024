@@ -4,15 +4,15 @@
 
 
 #define N_LETTERS 26
-#define BATCH_SIZE 32
-#define BATCH_SIZE2 32
 //@@ INSERT CODE HERE
 // Histogram - basic parallel implementation
 __global__ void histogram_1(unsigned char *buffer, long size, unsigned int *histogram, unsigned int nBins)
 {
 	int binWidth = ceil(26.0/nBins);
-	long idx = threadIdx.x * BATCH_SIZE + blockIdx.x * blockDim.x * BATCH_SIZE;
-	long endIdx = min(idx + BATCH_SIZE, size);
+	// int batch_size = ceil(size / (gridDim.x * blockDim.x));
+	int batch_size = (size + gridDim.x * blockDim.x - 1) / (gridDim.x * blockDim.x); 
+	long idx = threadIdx.x * batch_size + blockIdx.x * blockDim.x * batch_size;
+	long endIdx = min(idx + batch_size, size);
 	if (idx <= size)
 	{
 		for (long pos = idx; pos < endIdx; pos++) 
@@ -31,11 +31,12 @@ __global__ void histogram_1(unsigned char *buffer, long size, unsigned int *hist
 __global__ void histogram_2(unsigned char *buffer, long size, unsigned int *histogram, unsigned int nBins)
 {
 	int binWidth = ceil(26.0/nBins);
-	long idx = threadIdx.x + blockIdx.x * BATCH_SIZE2;
-	long endIdx = min((long)blockIdx.x + 1, size);
+	int threadsNum = gridDim.x * blockDim.x;
+	// int batch_size = ceil(size / (gridDim.x * blockDim.x));
+	long idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx <= size)
 	{
-		for (long pos = idx; pos < endIdx; pos += blockIdx.x) 
+		for (long pos = idx; pos < size; pos += threadsNum) 
 		{
 		int alphabetPosition = buffer[pos] - 'a';
 		if (alphabetPosition >= 0 && alphabetPosition < 26) 
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
 	//@@ INSERT CODE HERE
 	// HISTOGRAM 1
 	// dim3 dimBlock (256,1,1);
-	// dim3 dimGrid ((size + 256 * BATCH_SIZE - 1 ) / (256 * BATCH_SIZE),1,1);
+	// dim3 dimGrid ((size + 256 * 32 - 1 ) / (256 * 32),1,1);
 	// unsigned char *d_buffer;
 	// unsigned int *d_histogram, *h_histogram;
 
@@ -124,9 +125,10 @@ int main(int argc, char **argv)
 	// free(h_histogram);
 	// cudaFree(d_buffer);
 	// cudaFree(d_histogram);
+	////////////////////////////////////////////////////////////////
 	// HISTOGRAM 2
 	dim3 dimBlock2 (256,1,1);
-	dim3 dimGrid2 ((size + 256 * BATCH_SIZE2 - 1 ) / (BATCH_SIZE2),1,1);
+	dim3 dimGrid2 ((size + 256 - 1 ) / (256),1,1);
 	unsigned char *d_buffer2;
 	unsigned int *d_histogram2, *h_histogram2;
 
