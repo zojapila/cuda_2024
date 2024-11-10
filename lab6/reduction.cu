@@ -18,21 +18,126 @@ float reductionSequential(float *input, int width)
 __global__ void reductionKernelBasic(float *input, float *output, int width)
 {
     //@@ INSERT CODE HERE
+    __shared__ float shared[BLOCK_SIZE];
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < width) 
+    {
+        shared[tid] = input[idx];
+    }
+    else
+    {
+        shared[tid] = 0;
+    }
+    __syncthreads();
+
+    for (int offset = 1; offset < blockDim.x; offset *= 2) {
+        if (tid % (2 * offset) == 0) {
+            shared[tid] += shared[tid + offset];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        output[blockIdx.x] = shared[0];
+    }
 }
 
 __global__ void reductionKernelOp(float *input, float *output, int width)
 {
     //@@ INSERT CODE HERE
+    __shared__ float shared[BLOCK_SIZE];
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < width) 
+    {
+        shared[tid] = input[idx];
+    }
+    else
+    {
+        shared[tid] = 0;
+    }
+    __syncthreads();
+
+    for (int offset = blockDim.x / 2; offset > 0; offset /= 2) {
+        if (tid < offset) {
+            shared[tid] += shared[tid + offset];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        output[blockIdx.x] = shared[0];
+    }
 }
 
 float launchReductionKernelBasic(float *h_input, int width)
 {
+     int numBlocks = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    float *d_input, *d_output;
+    cudaMalloc(&d_input, width * sizeof(float));
+    cudaMalloc(&d_output, numBlocks * sizeof(float));
+
+    cudaMemcpy(d_input, h_input, width * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 dimBlock(BLOCK_SIZE, 1, 1);
+    dim3 dimGrid(numBlocks, 1, 1);
+
+    reductionKernelBasic<<<dimGrid, dimBlock>>>(d_input, d_output, width);
+    cudaDeviceSynchronize();
+
+    float *h_output = (float*)malloc(numBlocks * sizeof(float));
+    cudaMemcpy(h_output, d_output, numBlocks * sizeof(float), cudaMemcpyDeviceToHost);
+
+    float totalSum = 0;
+    for (int i = 0; i < numBlocks; i++) {
+        totalSum += h_output[i];
+    }
+
+    free(h_output);
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    return totalSum;
     //@@ INSERT CODE HERE
 }
 
 float launchReductionKernelOp(float *h_input, int width)
 {
     //@@ INSERT CODE HERE
+     int numBlocks = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    float *d_input, *d_output;
+    cudaMalloc(&d_input, width * sizeof(float));
+    cudaMalloc(&d_output, numBlocks * sizeof(float));
+
+    cudaMemcpy(d_input, h_input, width * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 dimBlock(BLOCK_SIZE, 1, 1);
+    dim3 dimGrid(numBlocks, 1, 1);
+
+    reductionKernelOp<<<dimGrid, dimBlock>>>(d_input, d_output, width);
+    cudaDeviceSynchronize();
+
+    float *h_output = (float*)malloc(numBlocks * sizeof(float));
+    cudaMemcpy(h_output, d_output, numBlocks * sizeof(float), cudaMemcpyDeviceToHost);
+
+    float totalSum = 0.0f;
+    for (int i = 0; i < numBlocks; i++) {
+        totalSum += h_output[i];
+    }
+
+    free(h_output);
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    return totalSum;
+    
 }
 
 int main(int argc, char *argv[])
