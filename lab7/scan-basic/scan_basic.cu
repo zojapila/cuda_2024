@@ -18,11 +18,49 @@ void scanSequential(float *output, float *input, int width)
 __global__ void scanKernel(float *input, float *output, int width)
 {
     //@@ INSERT CODE HERE
+    __shared__ float sharedData[SECTION_SIZE];
+
+    int tid = threadIdx.x;
+    if (tid < width)
+    {
+        sharedData[tid] = input[tid];
+    }
+    __syncthreads();
+   for (int i=1; i < width; i *= 2) 
+   {
+        float temp = 0;
+        if (tid >= i) 
+        {
+            temp = sharedData[tid - i];
+        }
+        __syncthreads();
+        sharedData[tid] += temp;
+        __syncthreads();
+   }
+
+    if (tid < width)
+    {
+        output[tid] = sharedData[tid];
+    }
 }
 
 void launchScanKernel(float *h_output, float *h_input, int width)
 {
     //@@ INSERT CODE HERE
+    size_t size = width * sizeof(float);
+
+    float *d_input, *d_output;
+    cudaMalloc((void **)&d_input, size);
+    cudaMalloc((void **)&d_output, size);
+
+    cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice);
+
+    scanKernel<<<1, SECTION_SIZE>>>(d_input, d_output, width);
+
+    cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_output);
 }
 
 int main(int argc, char *argv[])
